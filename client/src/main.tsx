@@ -1,17 +1,13 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+// 删除 BrowserRouter 等路由组件的引入
+// import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import App from './App';
 
 import './styles.css';
 
 createRoot(document.getElementById('root')!).render(
-  <>
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<App />} />
-        <Route path="/documents/:id" element={<App />} />
-      </Routes>
-    </BrowserRouter>
-  </>
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
 );

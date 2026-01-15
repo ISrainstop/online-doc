@@ -16,32 +16,28 @@ export class YjsService {
 
   private async saveUpdate(docId: string, update: Uint8Array) {
     try {
+      // 优先使用 setBuffer (我们在 config/redis.ts 里为真实 Redis 打了补丁)
       await redis.setBuffer(`ydoc:${docId}`, Buffer.from(update));
     } catch (e) {
-      // redis client may not support setBuffer; fall back to base64
-      await redis.set(`ydoc:${docId}`, Buffer.from(update).toString('base64'));
+      console.error('Save update failed', e);
     }
   }
 
   private async loadDocumentFromRedis(docId: string): Promise<Y.Doc> {
-    const cached = await redis.get(`ydoc:${docId}`);
     const ydoc = new Y.Doc();
-    if (cached) {
-      let buf: Buffer;
-      if (typeof cached === 'string') {
-        // assume base64
-        buf = Buffer.from(cached, 'base64');
-      } else if (Buffer.isBuffer(cached)) {
-        buf = cached as Buffer;
-      } else {
-        buf = Buffer.from(String(cached), 'base64');
+    try {
+      // 🔥【关键修改】使用 getBuffer 获取原始二进制数据
+      const cached = await redis.getBuffer(`ydoc:${docId}`);
+      
+      if (cached && Buffer.isBuffer(cached) && cached.length > 0) {
+        Y.applyUpdate(ydoc, cached);
       }
-      try {
-        Y.applyUpdate(ydoc, buf);
-      } catch (err) {
-        console.error('Failed to apply update', err);
-      }
+    } catch (err) {
+      // 捕获所有解码错误，不要让服务器崩溃
+      console.error(`[YjsService] Failed to load corrupted doc ${docId}, starting fresh. Error:`, err);
+      // 如果数据损坏，当作新文档处理，不抛出异常
     }
+    
     this.documents.set(docId, ydoc);
     return ydoc;
   }
@@ -61,7 +57,7 @@ export class YjsService {
       const ytext = ydoc.getText('content');
       for (const op of ops) {
         if (op.op === 'set') {
-          ytext.delete(0, ytext.length);
+          if (ytext.length > 0) ytext.delete(0, ytext.length);
           ytext.insert(0, op.text || '');
         } else if (op.op === 'insert') {
           ytext.insert(op.index, op.text);
